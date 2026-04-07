@@ -3,6 +3,7 @@ import json
 import os
 import requests
 import subprocess
+import sys
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -35,6 +36,16 @@ class ZPLHandler(FileSystemEventHandler):
             time.sleep(0.5)
             self.process_file(filepath)
 
+    def on_moved(self, event):
+        if event.is_directory:
+            return
+        
+        # event.dest_path contains the new file name/path
+        filepath = event.dest_path
+        if filepath.endswith('.txt') or filepath.endswith('.zpl'):
+            time.sleep(0.5)
+            self.process_file(filepath)
+
     def process_file(self, filepath):
         print(f"Processing new file: {filepath}")
         try:
@@ -53,7 +64,7 @@ class ZPLHandler(FileSystemEventHandler):
                 
                 # Change file extension to .printed
                 new_filepath = filepath + '.printed'
-                os.rename(filepath, new_filepath)
+                os.replace(filepath, new_filepath)
                 print(f"File marked as printed: {new_filepath}")
                 
                 # Clean up the generated PDF file
@@ -86,14 +97,34 @@ class ZPLHandler(FileSystemEventHandler):
 
     def print_pdf(self, pdf_path):
         print(f"Sending to printer: {self.printer_name}")
-        try:
-            # Using 'lp' which is the standard CUPS command available on macOS and Linux
-            subprocess.run(["lp", "-d", self.printer_name, pdf_path], check=True)
-            print("Print job submitted successfully.")
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to submit print job: {e}")
-        except FileNotFoundError:
-            print("The 'lp' command was not found. Are you on macOS/Linux with CUPS installed?")
+        
+        if sys.platform == 'win32':
+            # Windows approach
+            try:
+                import win32api
+                
+                # Get absolute path for Windows ShellExecute
+                abs_pdf_path = os.path.abspath(pdf_path)
+                
+                # Using 'printto' verb to print via the default application registered for PDFs
+                win32api.ShellExecute(0, "printto", abs_pdf_path, f'"{self.printer_name}"', ".", 0)
+                print("Print job submitted successfully via Windows spooler.")
+            except ImportError:
+                print("Error: The 'pywin32' package is required for Windows printing.")
+                print("Please install it using: pip install pywin32")
+            except Exception as e:
+                print(f"Failed to submit Windows print job: {e}")
+                
+        else:
+            # macOS / Linux approach
+            try:
+                # Using 'lp' which is the standard CUPS command available on macOS and Linux
+                subprocess.run(["lp", "-d", self.printer_name, pdf_path], check=True)
+                print("Print job submitted successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to submit print job: {e}")
+            except FileNotFoundError:
+                print("The 'lp' command was not found. Are you on macOS/Linux with CUPS installed?")
 
 def main():
     if not os.path.exists(CONFIG_FILE):
