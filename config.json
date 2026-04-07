@@ -1,0 +1,7 @@
+{
+    "watch_folder": "./labels",
+    "printer_name": "Brother_HL_1210W_series",
+    "label_width_inches": 4,
+    "label_height_inches": 8,
+    "print_density_dpmm": 8
+}
