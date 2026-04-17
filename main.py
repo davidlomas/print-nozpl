@@ -21,6 +21,7 @@ class ZPLHandler(FileSystemEventHandler):
         self.width = config.get('label_width_inches', 4)
         self.height = config.get('label_height_inches', 8)
         self.dpmm = config.get('print_density_dpmm', 8)
+        self.zoom = config.get('zoom_percentage', 80) / 100.0
         
         # Ensure the watch directory exists
         if not os.path.exists(self.watch_folder):
@@ -60,16 +61,15 @@ class ZPLHandler(FileSystemEventHandler):
             
             if success:
                 print(f"PDF generated successfully: {pdf_path}")
+                if self.zoom != 1.0:
+                    self.scale_pdf(pdf_path, self.zoom)
+                
                 self.print_pdf(pdf_path)
                 
                 # Change file extension to .printed
                 new_filepath = filepath + '.printed'
                 os.replace(filepath, new_filepath)
                 print(f"File marked as printed: {new_filepath}")
-                
-                # Clean up the generated PDF file
-                if os.path.exists(pdf_path):
-                    os.remove(pdf_path)
             else:
                 print("Failed to convert ZPL to PDF.")
                 
@@ -94,6 +94,36 @@ class ZPLHandler(FileSystemEventHandler):
         except requests.exceptions.RequestException as e:
             print(f"Labelary API request failed: {e}")
             return False
+
+    def scale_pdf(self, pdf_path, scale_factor):
+        print(f"Scaling PDF to {scale_factor * 100}% ...")
+        try:
+            # Import inline to avoid forcing it if not installed yet
+            from pypdf import PdfReader, PdfWriter, Transformation
+            
+            reader = PdfReader(pdf_path)
+            writer = PdfWriter()
+            
+            for page in reader.pages:
+                w = float(page.mediabox.width)
+                h = float(page.mediabox.height)
+                
+                # Center the scaled content
+                tx = (w - (w * scale_factor)) / 2
+                ty = (h - (h * scale_factor)) / 2
+                
+                transform = Transformation().scale(sx=scale_factor, sy=scale_factor).translate(tx=tx, ty=ty)
+                page.add_transformation(transform)
+                writer.add_page(page)
+                
+            with open(pdf_path, "wb") as f:
+                writer.write(f)
+            print("PDF scaled successfully.")
+        except ImportError:
+            print("Error: The 'pypdf' package is not installed. Skipping zoom scaling.")
+            print("Please install it using: pip install pypdf")
+        except Exception as e:
+            print(f"Failed to scale PDF: {e}")
 
     def print_pdf(self, pdf_path):
         print(f"Sending to printer: {self.printer_name}")
@@ -134,7 +164,8 @@ def main():
             "printer_name": "Tu_Impresora",
             "label_width_inches": 4,
             "label_height_inches": 8,
-            "print_density_dpmm": 8
+            "print_density_dpmm": 8,
+            "zoom_percentage": 80
         }
         with open(CONFIG_FILE, 'w') as f:
             json.dump(default_config, f, indent=4)
